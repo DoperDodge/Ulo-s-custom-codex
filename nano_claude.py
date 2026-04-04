@@ -45,6 +45,9 @@ Slash commands in REPL:
   /tasks delete <id>         Delete a task
   /tasks get <id>            Show full task details
   /tasks clear               Delete all tasks
+  /voice            Record voice input, transcribe, and submit
+  /voice status     Show available recording and STT backends
+  /voice lang <code>  Set STT language (e.g. zh, en, ja — default: auto)
   /exit /quit Exit
 """
 from __future__ import annotations
@@ -846,6 +849,110 @@ def cmd_tasks(args: str, _state, _config) -> bool:
     return True
 
 
+# ── Voice command ──────────────────────────────────────────────────────────
+
+# Per-session voice language setting (BCP-47 code or "auto")
+_voice_language: str = "auto"
+
+
+def cmd_voice(args: str, state, config) -> bool:
+    """Voice input: record → STT → auto-submit as user message.
+
+    /voice            — record once, transcribe, submit
+    /voice status     — show backend availability
+    /voice lang <code> — set STT language (e.g. zh, en, ja; 'auto' to reset)
+    """
+    global _voice_language
+
+    subcmd = args.strip().lower().split()[0] if args.strip() else ""
+    rest = args.strip()[len(subcmd):].strip()
+
+    # ── /voice lang <code> ──
+    if subcmd == "lang":
+        if not rest:
+            info(f"Current STT language: {_voice_language}  (use '/voice lang auto' to reset)")
+            return True
+        _voice_language = rest.lower()
+        ok(f"STT language set to '{_voice_language}'")
+        return True
+
+    # ── /voice status ──
+    if subcmd == "status":
+        try:
+            from voice import check_voice_deps, check_recording_availability, check_stt_availability
+            from voice.stt import get_stt_backend_name
+        except ImportError as e:
+            err(f"voice package not available: {e}")
+            return True
+
+        rec_ok, rec_reason = check_recording_availability()
+        stt_ok, stt_reason = check_stt_availability()
+
+        print(clr("  Voice status:", "cyan", "bold"))
+        if rec_ok:
+            ok("  Recording backend: available")
+        else:
+            err(f"  Recording: {rec_reason}")
+        if stt_ok:
+            ok(f"  STT backend:       {get_stt_backend_name()}")
+        else:
+            err(f"  STT: {stt_reason}")
+        info(f"  Language: {_voice_language}")
+        info("  Env override: NANO_CLAUDE_WHISPER_MODEL (default: base)")
+        return True
+
+    # ── /voice [start] — record once and submit ──
+    try:
+        from voice import check_voice_deps, voice_input as _voice_input
+    except ImportError:
+        err("voice/ package not found — this should not happen")
+        return True
+
+    available, reason = check_voice_deps()
+    if not available:
+        err(f"Voice input not available:\n{reason}")
+        return True
+
+    # Live energy bar (blocks are ▁▂▃▄▅▆▇█)
+    _BARS = " ▁▂▃▄▅▆▇█"
+    _last_bar: list[str] = [""]
+
+    def on_energy(rms: float) -> None:
+        level = min(int(rms * 8 / 0.08), 8)  # normalise ~0–0.08 to 0–8
+        bar = _BARS[level]
+        if bar != _last_bar[0]:
+            _last_bar[0] = bar
+            print(f"\r\033[K  🎙  {bar}  ", end="", flush=True)
+
+    print(clr("  🎙  Listening… (speak now, auto-stops on silence, Ctrl+C to cancel)", "cyan"))
+
+    try:
+        text = _voice_input(language=_voice_language, on_energy=on_energy)
+    except KeyboardInterrupt:
+        print()
+        info("  Voice input cancelled.")
+        return True
+    except Exception as e:
+        print()
+        err(f"Voice input error: {e}")
+        return True
+
+    print()  # newline after energy bar
+
+    if not text:
+        info("  (nothing transcribed — no speech detected)")
+        return True
+
+    ok(f'  Transcribed: \u201c{text}\u201d')
+    print()
+
+    # Submit the transcribed text as a user message (same path as typed input)
+    # We call run_query via the closure captured in repl().
+    # Since cmd_voice is called from handle_slash which is inside repl(),
+    # we pass the text back via a sentinel return value that repl() recognises.
+    return ("__voice__", text)
+
+
 COMMANDS = {
     "help":        cmd_help,
     "clear":       cmd_clear,
@@ -867,6 +974,7 @@ COMMANDS = {
     "plugin":      cmd_plugin,
     "tasks":       cmd_tasks,
     "task":        cmd_tasks,
+    "voice":       cmd_voice,
     "exit":        cmd_exit,
     "quit":        cmd_exit,
 }
@@ -883,7 +991,10 @@ def handle_slash(line: str, state, config) -> Union[bool, tuple]:
     args = parts[1] if len(parts) > 1 else ""
     handler = COMMANDS.get(cmd)
     if handler:
-        handler(args, state, config)
+        result = handler(args, state, config)
+        # cmd_voice returns ("__voice__", text) to ask the REPL to run_query
+        if isinstance(result, tuple) and result[0] == "__voice__":
+            return result
         return True
 
     # Fall through to skill lookup
@@ -1019,6 +1130,15 @@ def repl(config: dict, initial_prompt: str = None):
 
         result = handle_slash(user_input, state, config)
         if isinstance(result, tuple):
+            # Voice sentinel: ("__voice__", transcribed_text)
+            if result[0] == "__voice__":
+                _, voice_text = result
+                try:
+                    run_query(voice_text)
+                except KeyboardInterrupt:
+                    print(clr("\n  (interrupted)", "yellow"))
+                continue
+            # Skill match: (SkillDef, args_str)
             skill, skill_args = result
             info(f"Running skill: {skill.name}" + (f" [{skill.context}]" if skill.context == "fork" else ""))
             try:

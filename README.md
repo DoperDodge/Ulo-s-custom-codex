@@ -27,6 +27,7 @@ English | [中文](https://github.com/SafeRL-Lab/nano-claude-code/blob/main/docs
 ---
 
 ## 🔥🔥🔥 News (Pacific Time)
+- 10:00 AM, Apr 04, 2026: **v3.05** — Voice input (`voice/` package): `sounddevice` → `arecord` → SoX recording backends, `faster-whisper` → `openai-whisper` → OpenAI API STT backends. Smart keyterm extraction from git branch + project name + recent files passed as Whisper `initial_prompt` for coding-domain accuracy. `/voice`, `/voice status`, `/voice lang <code>` REPL commands. Works fully offline with no API key. 29 new tests (**~11.6K** lines of Python).
 - 10:29 PM, Apr 03, 2026: **v3.04** — Expanded tool coverage: `NotebookEdit` (edit Jupyter `.ipynb` cells — replace/insert/delete with full JSON round-trip) and `GetDiagnostics` (LSP-style diagnostics via pyright/mypy/flake8/tsc/shellcheck). Also fixed a pre-existing schema-index bug in `_register_builtins` by switching to name-based lookup (**~10.5K** lines of Python).
 - 06:00 PM, Apr 03, 2026: **v3.03** — Task management system (`task/` package): `TaskCreate` / `TaskUpdate` / `TaskGet` / `TaskList` tools with sequential IDs, dependency edges (blocks/blocked_by), metadata, persistence to `.nano_claude/tasks.json`, thread-safe store, `/tasks` REPL command, 37 new tests (**~9500** lines of Python).
 - 02:50 PM, Apr 03, 2026: **v3.02** — Plugin system (`plugin/` package): install/uninstall/enable/disable/update via `/plugin` CLI, recommendation engine (keyword+tag matching), multi-scope (user/project), git-based marketplace. `AskUserQuestion` tool: interactive mid-task user prompts with numbered options and free-text input (**~8500** lines of Python).
@@ -66,6 +67,7 @@ Nano Claude Code: **A Lightweight** and **Easy-to-Use** Python Reimplementation 
   * [Plugin System](#plugin-system)
   * [AskUserQuestion Tool](#askuserquestion-tool)
   * [Task Management](#task-management)
+  * [Voice Input](#voice-input)
   * [Context Compression](#context-compression)
   * [Diff View](#diff-view)
   * [CLAUDE.md Support](#claudemd-support)
@@ -88,9 +90,10 @@ Claude Code is a powerful, production-grade AI coding assistant — but its sour
 |-----------|--------------------------|---------------------------|
 | Language | TypeScript + React/Ink | Python 3.8+ |
 | Source files | ~1,332 TS/TSX files | 51 Python files |
-| Lines of code | ~283K | ~10.5K |
+| Lines of code | ~283K | ~11.6K |
 | Built-in tools | 44+ | 23 |
-| Slash commands | 88 | 17 |
+| Slash commands | 88 | 18 |
+| Voice input | Proprietary Anthropic WebSocket (OAuth required) | Local Whisper / OpenAI API — works offline, no subscription |
 | Model providers | Anthropic only | 7+ (Anthropic · OpenAI · Gemini · Kimi · Qwen · DeepSeek · Ollama · …) |
 | Local models | No | Yes — Ollama, LM Studio, vLLM, any OpenAI-compatible endpoint |
 | Build step required | Yes (Bun + esbuild) | No — run directly with `python nano_claude.py` |
@@ -116,6 +119,7 @@ Claude Code is a powerful, production-grade AI coding assistant — but its sour
 - **Two-layer context compression** — rule-based snip + AI summarization, configurable via `preserve_last_n_turns`.
 - **Notebook editing** — `NotebookEdit` directly manipulates `.ipynb` JSON (replace/insert/delete cells) with no kernel required.
 - **Diagnostics without LSP server** — `GetDiagnostics` chains pyright → mypy → flake8 → py_compile for Python and tsc/shellcheck for other languages, with zero configuration.
+- **Offline voice input** — `/voice` records via `sounddevice`/`arecord`/SoX, transcribes with local `faster-whisper` (no API key, no subscription), and auto-submits. Keyterms from your git branch and project files boost coding-term accuracy.
 
 ### Key design differences
 
@@ -162,7 +166,8 @@ Claude Code is a powerful, production-grade AI coding assistant — but its sour
 | Skills | Built-in `/commit` · `/review` + custom markdown skills with argument substitution and fork/inline execution |
 | Plugin tools | Register custom tools via `tool_registry.py` |
 | Permission system | `auto` / `accept-all` / `manual` modes |
-| 17 slash commands | `/model` · `/config` · `/save` · `/cost` · `/memory` · `/skills` · `/agents` · … |
+| 18 slash commands | `/model` · `/config` · `/save` · `/cost` · `/memory` · `/skills` · `/agents` · `/voice` · … |
+| Voice input | Record → transcribe → auto-submit. Backends: `sounddevice` / `arecord` / SoX + `faster-whisper` / `openai-whisper` / OpenAI API. Works fully offline. |
 | Context injection | Auto-loads `CLAUDE.md`, git status, cwd, persistent memory |
 | Session persistence | Save / load conversations to `~/.nano_claude/sessions/` |
 | Extended Thinking | Toggle on/off (Claude models only) |
@@ -577,6 +582,9 @@ Type `/` and press **Tab** to autocomplete.
 | `/mcp reload <name>` | Reconnect a single MCP server |
 | `/mcp add <name> <cmd> [args]` | Add a stdio MCP server to user config |
 | `/mcp remove <name>` | Remove a server from user config |
+| `/voice` | Record voice, transcribe with Whisper, auto-submit as prompt |
+| `/voice status` | Show recording and STT backend availability |
+| `/voice lang <code>` | Set STT language (e.g. `zh`, `en`, `ja`; `auto` to detect) |
 | `/exit` / `/quit` | Exit |
 
 **Switching models inside a session:**
@@ -1150,6 +1158,83 @@ Claude:
 
 ---
 
+## Voice Input
+
+Nano Claude Code v3.05 adds a fully offline voice-to-prompt pipeline. Speak your request — it is transcribed and submitted as if you had typed it.
+
+### Quick start
+
+```bash
+# 1. Install a recording backend (choose one)
+pip install sounddevice        # recommended: cross-platform, no extra binary
+# sudo apt install alsa-utils  # Linux arecord fallback
+# sudo apt install sox         # SoX rec fallback
+
+# 2. Install a local STT backend (recommended — works offline, no API key)
+pip install faster-whisper numpy
+
+# 3. Start Nano Claude Code and speak
+python nano_claude.py
+[myproject] ❯ /voice
+  🎙  Listening… (speak now, auto-stops on silence, Ctrl+C to cancel)
+  🎙  ████
+✓  Transcribed: "fix the authentication bug in user.py"
+[auto-submitting…]
+```
+
+### STT backends (tried in order)
+
+| Backend | Install | Notes |
+|---|---|---|
+| `faster-whisper` | `pip install faster-whisper` | **Recommended** — local, offline, fastest, GPU optional |
+| `openai-whisper` | `pip install openai-whisper` | Local, offline, original OpenAI model |
+| OpenAI Whisper API | set `OPENAI_API_KEY` | Cloud, requires internet + API key |
+
+Override the Whisper model size with `NANO_CLAUDE_WHISPER_MODEL` (default: `base`):
+
+```bash
+export NANO_CLAUDE_WHISPER_MODEL=small   # better accuracy, slower
+export NANO_CLAUDE_WHISPER_MODEL=tiny    # fastest, lightest
+```
+
+### Recording backends (tried in order)
+
+| Backend | Install | Notes |
+|---|---|---|
+| `sounddevice` | `pip install sounddevice` | **Recommended** — cross-platform, Python-native |
+| `arecord` | `sudo apt install alsa-utils` | Linux ALSA, no pip needed |
+| `sox rec` | `sudo apt install sox` / `brew install sox` | Built-in silence detection |
+
+### Keyterm boosting
+
+Before each recording, Nano extracts coding vocabulary from:
+- **Git branch** (e.g. `feat/voice-input` → "feat", "voice", "input")
+- **Project root name** (e.g. "nano-claude-code")
+- **Recent source file stems** (e.g. `authentication_handler.py` → "authentication", "handler")
+- **Global coding terms**: `MCP`, `grep`, `TypeScript`, `OAuth`, `regex`, `gRPC`, …
+
+These are passed as Whisper's `initial_prompt` so the STT engine prefers correct spellings of coding terms.
+
+### Commands
+
+| Command | Description |
+|---|---|
+| `/voice` | Record voice and auto-submit the transcript as your next prompt |
+| `/voice status` | Show which recording and STT backends are available |
+| `/voice lang <code>` | Set transcription language (`en`, `zh`, `ja`, `de`, `fr`, … default: `auto`) |
+
+### How it compares to Claude Code
+
+| | Claude Code | Nano Claude Code v3.05 |
+|---|---|---|
+| STT service | Anthropic private WebSocket (`voice_stream`) | `faster-whisper` / `openai-whisper` / OpenAI API |
+| Requires Anthropic OAuth | Yes | **No** |
+| Works offline | No | **Yes** (with local Whisper) |
+| Keyterm hints | Deepgram `keyterms` param | Whisper `initial_prompt` (git + files + vocab) |
+| Language support | Server-allowlisted codes | Any language Whisper supports |
+
+---
+
 ## Context Compression
 
 Long conversations are automatically compressed to stay within the model's context window.
@@ -1273,17 +1358,24 @@ nano_claude_code/
 │   ├── config.py         # Load .mcp.json (project) + ~/.nano_claude/mcp.json (user)
 │   └── tools.py          # Auto-discover + register MCP tools into tool_registry
 │
-└── tests/                # 210+ unit tests
+├── voice/                # Voice input package (v3.05)
+│   ├── __init__.py       # Public API: check_voice_deps, voice_input
+│   ├── recorder.py       # Audio capture: sounddevice → arecord → sox rec
+│   ├── stt.py            # STT: faster-whisper → openai-whisper → OpenAI API
+│   └── keyterms.py       # Coding-domain vocab from git branch + project files
+│
+└── tests/                # 239+ unit tests
     ├── test_mcp.py
     ├── test_memory.py
     ├── test_skills.py
     ├── test_subagent.py
     ├── test_tool_registry.py
     ├── test_compaction.py
-    └── test_diff_view.py
+    ├── test_diff_view.py
+    └── test_voice.py      # 29 voice tests (no hardware required)
 ```
 
-> **For developers:** Each feature package (`multi_agent/`, `memory/`, `skill/`, `mcp/`) is self-contained. Add custom tools by calling `register_tool(ToolDef(...))` from any module imported by `tools.py`.
+> **For developers:** Each feature package (`multi_agent/`, `memory/`, `skill/`, `mcp/`, `voice/`) is self-contained. Add custom tools by calling `register_tool(ToolDef(...))` from any module imported by `tools.py`.
 
 ---
 
@@ -1408,3 +1500,34 @@ alias nc='python /path/to/nano_claude_code/nano_claude.py'
 # Or install as a script
 pip install -e .   # if setup.py exists
 ```
+
+**Q: How do I set up voice input?**
+
+```bash
+# Minimal setup (local, offline, no API key):
+pip install sounddevice faster-whisper numpy
+
+# Then in the REPL:
+/voice status          # verify backends are detected
+/voice                 # speak your prompt
+```
+
+On first use, `faster-whisper` downloads the `base` model (~150 MB) automatically.
+Use a larger model for better accuracy: `export NANO_CLAUDE_WHISPER_MODEL=small`
+
+**Q: Voice input transcribes my words wrong (misses coding terms).**
+
+The keyterm booster already injects coding vocabulary from your git branch and project files.
+For persistent domain terms, put them in a `.nano_claude/voice_keyterms.txt` file (one term per line) — this is checked automatically on each recording.
+
+**Q: Can I use voice input in Chinese / Japanese / other languages?**
+
+Yes. Set the language before recording:
+
+```
+/voice lang zh    # Mandarin Chinese
+/voice lang ja    # Japanese
+/voice lang auto  # reset to auto-detect (default)
+```
+
+Whisper supports 99 languages. `auto` detection works well but explicit codes improve accuracy for short utterances.
