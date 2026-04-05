@@ -430,10 +430,6 @@ def stream_openai_compat(
     tool_buf: dict = {}   # index → {id, name, args_str}
     in_tok = out_tok = 0
 
-    import json
-    with open("debug_payload.json", "w", encoding="utf-8") as _f:
-        _f.write(json.dumps(kwargs, indent=2, default=str))
-
     stream = client.chat.completions.create(**kwargs)
     for chunk in stream:
         if not chunk.choices:

@@ -1553,7 +1553,7 @@ def repl(config: dict, initial_prompt: str = None):
             for event in run(user_input, state, config, system_prompt):
                 if isinstance(event, TextChunk):
                     if thinking_started:
-                        print("\n")  # Break the line after the thinking block finishes
+                        print("\033[0m\n")  # Reset dim ANSI + break line after thinking block
                         thinking_started = False
                     # stream_text auto-starts Live on first chunk when Rich available
                     stream_text(event.text)

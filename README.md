@@ -29,6 +29,8 @@ English | [中文](https://github.com/SafeRL-Lab/nano-claude-code/blob/main/docs
 
 
 ## 🔥🔥🔥 News (Pacific Time)
+- 11:59 PM, Apr 05, 2026: **post-merge fixes** — removed a debug `debug_payload.json` file write that fired on every OpenAI-compatible API call (left over from PR #11 development); also fixed ANSI dim color not being reset after the thinking block ends, which caused subsequent text to appear dim in non-Rich terminals. `pyproject.toml` version bumped to `3.05.4`; `sounddevice` moved to optional `voice` extra (`pip install nano-claude-code[voice]`).
+- 11:59 PM, Apr 05, 2026: **Native Ollama reasoning + terminal rendering fix (PR #11)** — local reasoning models (deepseek-r1, qwen3, gemma4) now stream their `<think>` blocks to the terminal. Ollama streams thoughts in `msg["thinking"]`; nano-claude was silently dropping them — fixed by yielding `ThinkingChunk` from the Ollama adapter. Also fixed a visual glitch where token-by-token ANSI dim resets caused thoughts to print vertically on Windows CMD/PowerShell; and `flush_response()` was being called on every thinking token instead of once — fixed. Enable with `/verbose` and `/thinking`.
 - 11:59 PM, Apr 05, 2026: **uv support** — added `pyproject.toml`; install with `uv tool install .` to get the `nano_claude` command available globally from anywhere (isolated environment, no PATH hacks needed).
 - 00:41 PM, Apr 05, 2026: **v3.05.4** — Structured session history: on every exit, sessions are saved to `daily/YYYY-MM-DD/` (capped at `session_daily_limit`, default 5 per day) and appended to a master `history.json` (capped at `session_history_limit`, default 100). Each session file now includes `session_id` and `saved_at` metadata. `/load` groups sessions by date with time, ID, and turn-count display; supports multi-select (`1,2,3`) to merge sessions and `H` to load the full history with token-count confirmation. Both limits are configurable via `/config`.
 - 00:41 PM, Apr 05, 2026: **v3.05.3 fix session ** — Structured session history: on every exit, sessions are saved to `daily/YYYY-MM-DD/` (capped at `session_daily_limit`, default 5 per day) and appended to a master `history.json` (capped at `session_history_limit`, default 100). Each session file now includes `session_id` and `saved_at` metadata. `/load` groups sessions by date with time, ID, and turn-count display; supports multi-select (`1,2,3`) to merge sessions and `H` to load the full history with token-count confirmation. Both limits are configurable via `/config`.
@@ -136,6 +138,7 @@ Claude Code is a powerful, production-grade AI coding assistant — but its sour
 - **Cloud session sync** — `/cloudsave` backs up conversations to private GitHub Gists with zero extra dependencies; restore any past session on any machine with `/cloudsave load <id>`.
 - **Proactive background monitoring** — `/proactive 5m` activates a sentinel daemon that wakes the agent automatically after a period of inactivity, enabling continuous monitoring loops, scheduled checks, or trading bots without user prompts.
 - **Rich Live streaming rendering** — When `rich` is installed, responses stream as live-updating Markdown in place (no duplicate raw text), with clean tool-call interleaving.
+- **Native Ollama reasoning** — Local reasoning models (deepseek-r1, qwen3, gemma4) stream their `<think>` tokens directly to the terminal via `ThinkingChunk` events; enable with `/verbose` and `/thinking`.
 
 ### Key design differences
 
@@ -189,7 +192,7 @@ Claude Code is a powerful, production-grade AI coding assistant — but its sour
 | Context injection | Auto-loads `CLAUDE.md`, git status, cwd, persistent memory |
 | Session persistence | Autosave on exit to `daily/YYYY-MM-DD/` (per-day limit) + `history.json` (master, all sessions) + `session_latest.json` (/resume); sessions include `session_id` and `saved_at` metadata; `/load` grouped by date |
 | Cloud sync | `/cloudsave` syncs sessions to private GitHub Gists; auto-sync on exit; load from cloud by Gist ID. No new dependencies (stdlib `urllib`). |
-| Extended Thinking | Toggle on/off (Claude models only) |
+| Extended Thinking | Toggle on/off for Claude models; native `<think>` block streaming for local Ollama reasoning models (deepseek-r1, qwen3, gemma4) |
 | Cost tracking | Token usage + estimated USD cost |
 | Non-interactive mode | `--print` flag for scripting / CI |
 
@@ -242,6 +245,8 @@ Claude Code is a powerful, production-grade AI coding assistant — but its sour
 
 > **Note:** Tool calling requires a model that supports function calling. Recommended local models: `qwen2.5-coder`, `llama3.3`, `mistral`, `phi4`.
 
+> **Reasoning models:** `deepseek-r1`, `qwen3`, and `gemma4` stream native `<think>` blocks. Enable with `/verbose` and `/thinking` to see thoughts in the terminal. Note: models fed a large system prompt (like nano-claude's 25 tool schemas) may suppress their thinking phase to avoid breaking the expected JSON format — this is model behavior, not a bug.
+
 ---
 
 ## Installation
@@ -287,8 +292,9 @@ git clone <repo-url>
 cd nano-claude-code
 
 pip install -r requirements.txt
-# or manually:
-pip install anthropic openai httpx rich sounddevice
+# or manually (sounddevice is optional — only needed for /voice):
+pip install anthropic openai httpx rich
+pip install sounddevice  # optional: voice input
 
 python nano_claude.py
 ```
