@@ -36,6 +36,18 @@ English | [中文](https://github.com/SafeRL-Lab/nano-claude-code/blob/main/docs
 ---
 
 
+---
+
+  <div align=center>
+ <img src="https://github.com/SafeRL-Lab/nano-claude-code/blob/main/docs/proactive_demo.gif" width="850"/> 
+ </div>
+<div align=center>
+<center style="color:#000000;text-decoration:underline">Proactive Mode: Autonomous Agent</center>
+ </div>
+
+---
+
+
 
 ## 🔥🔥🔥 News (Pacific Time)
 
