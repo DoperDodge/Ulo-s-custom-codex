@@ -1,5 +1,5 @@
 
-# A collection of the newest Claude Code open source
+# A collection of the newest Ulo's Codex open source
 
 > Source archive of Claude Code and different versions of the clean-room Python rewrite research repository
 
