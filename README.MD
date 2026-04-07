@@ -89,7 +89,7 @@ This directory serves as the unmodified reference snapshot. No annotations, docs
 
 
 
-## 2. claude-code-source-code
+## 2. ulo's-codex-source-code
 
 A decompiled/unpacked source archive of Claude Code v2.1.88, reconstructed from the npm package `@anthropic-ai/claude-code@2.1.88`, containing approximately 163,318 lines of TypeScript code.
 
